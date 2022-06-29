@@ -10,8 +10,8 @@ from smbus2 import SMBus
 from mlx90614 import MLX90614
 import RPi.GPIO as GPIO
 from time import sleep
-import notify2
-import subprocess
+#import notify2
+#import subprocess
 
 
 
@@ -24,20 +24,15 @@ greenLed = 8
 redLed = 7
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BOARD)
-GPIO.setup(greenLed, GPIO.OUT, initial=GPIO.LOW)
-GPIO.setup(redLed, GPIO.OUT, initial=GPIO.LOW)
-
-#Servo motor setup
-servoPin = 15
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup(servoPin, GPIO.OUT)
-pwm = GPIO.PWM(servoPin, 50)
+GPIO.setup(greenLed, GPIO.OUT, initial=GPIO.HIGH)
+GPIO.setup(redLed, GPIO.OUT, initial=GPIO.HIGH)
 
 
-#pwm.start(2.5)
+
+
 
 #Buzzer setup
-buzz = 11
+buzz = 23
 GPIO.setup(buzz, GPIO.OUT)
 GPIO.output(buzz, GPIO.LOW)
 
@@ -45,11 +40,64 @@ GPIO.output(buzz, GPIO.LOW)
 ir = 10
 GPIO.setup(ir, GPIO.IN)
 
+# Define some device parameters
+I2C_ADDR  = 0x27 # I2C device address
+LCD_WIDTH = 16   # Maximum characters per line
+
+# Define some device constants
+LCD_CHR = 1 # Mode - Sending data
+LCD_CMD = 0 # Mode - Sending command
+
+LCD_LINE_1 = 0x80 # LCD RAM address for the 1st line
+LCD_LINE_2 = 0xC0 # LCD RAM address for the 2nd line
+LCD_LINE_3 = 0x94 # LCD RAM address for the 3rd line
+LCD_LINE_4 = 0xD4 # LCD RAM address for the 4th line
+
+LCD_BACKLIGHT  = 0x08  # On
+#LCD_BACKLIGHT = 0x00  # Off
+
+ENABLE = 0b00000100 # Enable bit
+
+# Timing constants
+E_PULSE = 0.0005
+E_DELAY = 0.0005
+
+def lcd_init():
+  # Initialise display
+  lcd_byte(0x33,LCD_CMD) # 110011 Initialise
+  lcd_byte(0x32,LCD_CMD) # 110010 Initialise
+  lcd_byte(0x06,LCD_CMD) # 000110 Cursor move direction
+  lcd_byte(0x0C,LCD_CMD) # 001100 Display On,Cursor Off, Blink Off 
+  lcd_byte(0x28,LCD_CMD) # 101000 Data length, number of lines, font size
+  lcd_byte(0x01,LCD_CMD) # 000001 Clear display
+  time.sleep(E_DELAY)
 
 
+def lcd_byte(bits, mode):
+  # Send byte to data pins
+  # bits = the data
+  # mode = 1 for data
+  #        0 for command
+
+  bits_high = mode | (bits & 0xF0) | LCD_BACKLIGHT
+  bits_low = mode | ((bits<<4) & 0xF0) | LCD_BACKLIGHT
+
+  # High bits
+  bus.write_byte(I2C_ADDR, bits_high)
+  
+def lcd_string(message,line):
+  # Send string to display
+
+  message = message.ljust(LCD_WIDTH," ")
+
+  lcd_byte(line, LCD_CMD)
+
+  for i in range(LCD_WIDTH):
+    lcd_byte(ord(message[i]),LCD_CHR)
+"""
 def sendMessage(title, msg):
     subprocess.Popen(['notify-send', msg])
-    return
+    return"""
 
 
 def detect_and_predict_mask(frame, faceNet, maskNet):
@@ -113,49 +161,38 @@ def detect_and_predict_mask(frame, faceNet, maskNet):
 	# locations
 	return (locs, preds)
 
-
-def openGate():
-    pwm.ChangeDutyCycle(2.0)
-    #pigpio.set_PWM_dutycycle(2.0)
-    sleep(0.5)
-    
-    
-def closeGate():
-    pwm.ChangeDutyCycle(12.0)
-    #pigpio.set_PWM_dutycycle(12.0)
-    sleep(0.1)
+   
     
 
 #Apply Algorithm
 def applyLogic(label):
-    pwm.start(0)
+    #pwm.start(0)
     temp = getTempData()
-    if temp >= 37:
-        GPIO.output(buzz, GPIO.HIGH)
-        GPIO.output(redLed, GPIO.HIGH)
+    if temp >= 30:
+        print("Greater")
+        #GPIO.output(buzz, GPIO.HIGH)
+        GPIO.output(greenLed, GPIO.HIGH)
         sleep(1)
     elif (label=="No Mask"):
         GPIO.output(redLed, GPIO.HIGH)
         GPIO.output(greenLed, GPIO.LOW)
-        GPIO.output(buzz, GPIO.LOW)
-        closeGate()
-        sendMessage("No Mask","Please wear mask!")
+        GPIO.output(buzz, GPIO.HIGH)
+        #lcd_string("No Mask",LCD_LINE_1)
     else:
         GPIO.output(buzz, GPIO.LOW)
         GPIO.output(greenLed, GPIO.HIGH)
         GPIO.output(redLed, GPIO.LOW)
-        openGate()
         
 
 def getTempData():
-    temp = sensor.get_object_1()
+    temp = sensor.get_obj_temp()
     return temp
-
+"""
 def closeEverything():
     GPIO.output(redLed, GPIO.LOW)
     GPIO.output(greenLed, GPIO.LOW)
     GPIO.output(buzz, GPIO.LOW)
-    closeGate()
+    closeGate()"""
 
 def detect_mask(locs, preds, frame):
     for (box, pred) in zip(locs, preds):
@@ -167,7 +204,7 @@ def detect_mask(locs, preds, frame):
             
         color = (0, 255, 0) if label == "Mask" else (0, 0, 255)
         
-        print(label)
+        #print(label)
 
         # include the probability in the label
         #label_out = "{}: {:.2f}%".format(label, max(mask, withoutMask) * 100)
@@ -179,16 +216,16 @@ def detect_mask(locs, preds, frame):
         
         # display the label and bounding box rectangle on the output
         # frame
-        cv2.putText(frame, label_out, (startX, startY - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
+        cv2.putText(frame, label, (startX, startY - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
         cv2.putText(frame, person_temp, (endX-10, endY), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 0, 0), 2)
         cv2.rectangle(frame, (startX, startY), (endX, endY), color, 2)
         
-        dist = GPIO.input(ir)
+        #dist = GPIO.input(ir)
 
-        if dist == 0:
-            applyLogic(label)
-        else:
-            closeEverything()
+        #if dist == 0:
+        applyLogic(label)
+        #else:
+            #closeEverything()
         
 
 
@@ -199,7 +236,7 @@ def run_video(detect_and_predict_mask):
         # grab the frame from the threaded video stream and resize it
         # to have a maximum width of 400 pixels
         frame = vs.read()
-        frame = imutils.resize(frame, width=1000)
+        frame = imutils.resize(frame, width=400)
         #cv2.normalize(frame, frame,0,255, cv2.NORM_MINMAX)
 
         (locs, preds) = detect_and_predict_mask(frame, faceNet, maskNet)
@@ -219,7 +256,7 @@ def run_video(detect_and_predict_mask):
 
 
     cv2.destroyAllWindows()
-    pwm.stop()
+    #pwm.stop()
     GPIO.cleanup()
     vs.stop()
     
@@ -227,18 +264,18 @@ def run_video(detect_and_predict_mask):
 
 #main function
 if __name__=="__main__":
+    #lcd_init()
+    #lcd_string("Welcome",LCD_LINE_1)
     # load our serialized face detector model from disk
-    prototxtPath = "/home/pi/Desktop/Project/face_detector/deploy.prototxt"
-    weightsPath = "/home/pi/Desktop/Project/face_detector/res10_300x300_ssd_iter_140000.caffemodel"
+    prototxtPath = r"/home/project/deploy.prototxt"
+    weightsPath = r"/home/project/res10_300x300_ssd_iter_140000.caffemodel"
     faceNet = cv2.dnn.readNet(prototxtPath, weightsPath)
 
     # load the face mask detector model from disk
-    maskNet = tensorflow.keras.models.load_model("mask_model11.model")
+    maskNet = tensorflow.keras.models.load_model("/home/project/mask_model11.model")
     
     # initialize the video stream
     print("[INFO] starting video stream...")
-    vs = VideoStream(src=0, framerate=30).start()
+    vs = VideoStream(src=0).start()
     
     run_video(detect_and_predict_mask)
-
-    
